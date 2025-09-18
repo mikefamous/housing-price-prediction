@@ -1,0 +1,227 @@
+---
+## NAME: ENOMAEN MICHAEL AKHIGBE
+## STUDENT NUMBER: 2335218
+## MODULE: DATA MINING AND MACHINE LEARNING
+## INSTITUTE: UNIVERSITY OF GREATER MANCHESTER
+title: "Portfolio 3"
+output: html_document
+date: "2025-04-08"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load Required Libraries
+```{r libraries}
+library(readr)
+library(dplyr)
+library(ggplot2)
+library(caret)
+library(e1071)
+library(rpart)
+library(randomForest)
+library(corrplot)
+library(Metrics)
+```
+
+## Load and Inspect Data
+```{r load-data}
+data <- read.csv("/Users/enomaenakhigbe/Downloads/Housing Data_Same Region.csv")
+
+# Inspect structure and summary
+str(data)
+head(data)
+summary(data)
+
+# Check for missing values
+colSums(is.na(data))
+
+# Check for duplicates
+sum(duplicated(data))
+
+# Check column types
+sapply(data, class)
+
+# Find non-numeric columns
+non_numeric_cols <- names(data)[!sapply(data, is.numeric)]
+print(non_numeric_cols)
+```
+
+## Convert Non-Numeric Columns
+```{r convert-numeric}
+data_numeric <- as.data.frame(lapply(data, function(x) {
+  if (is.numeric(x)) x else as.numeric(as.factor(x))
+}))
+str(data_numeric)
+```
+
+## Outlier Detection and Correlation
+```{r outliers-corr}
+# Boxplot for Sale Price
+boxplot(data$SALE_PRC, main = "Sale Price Boxplot", col = "blue")
+
+# Correlation Matrix
+numeric_cols <- data %>% select(-SALE_PRC) %>% select_if(is.numeric)
+corr_matrix <- cor(numeric_cols, use = "complete.obs")
+corrplot(corr_matrix, method = "color", type = "upper", tl.cex = 0.8)
+
+# Correlation with SALE_PRC
+data_numeric <- data %>% select(where(is.numeric))
+corr_matrix <- cor(data_numeric, use = "complete.obs")
+sale_corr <- sort(corr_matrix[, "SALE_PRC"], decreasing = TRUE)
+print(sale_corr)
+```
+
+## Feature Selection and Train-Test Split
+```{r split}
+data <- data %>%
+  select(SALE_PRC, LND_SQFOOT, TOT_LVG_AREA, SPEC_FEAT_VAL, structure_quality)
+
+set.seed(123)
+sample_size <- floor(0.7 * nrow(data))
+train_index <- sample(seq_len(nrow(data)), size = sample_size)
+
+train <- data[train_index, ]
+test <- data[-train_index, ]
+```
+
+## Define MAE Function
+```{r mae-function}
+mae <- function(actual, predicted) {
+  mean(abs(actual - predicted))
+}
+```
+
+## Train and Evaluate Models
+```{r modeling}
+models <- list()
+mae_values <- c()
+
+# Linear Regression
+lm_model <- lm(SALE_PRC ~ ., data = train)
+lm_prediction <- predict(lm_model, newdata = test)
+mae_values <- c(mae_values, mae(test$SALE_PRC, lm_prediction))
+models <- c(models, "Linear Model")
+
+# SVM Linear
+svr_linear <- svm(SALE_PRC ~ ., data = train, kernel = "linear")
+svr_linear_prediction <- predict(svr_linear, newdata = test)
+mae_values <- c(mae_values, mae(test$SALE_PRC, svr_linear_prediction))
+models <- c(models, "SVM Linear")
+
+# SVM Radial
+svr_radial <- svm(SALE_PRC ~ ., data = train, kernel = "radial")
+svr_radial_prediction <- predict(svr_radial, newdata = test)
+mae_values <- c(mae_values, mae(test$SALE_PRC, svr_radial_prediction))
+models <- c(models, "SVM Radial")
+
+# SVM Polynomial
+svr_poly <- svm(SALE_PRC ~ ., data = train, kernel = "polynomial")
+svr_poly_prediction <- predict(svr_poly, newdata = test)
+mae_values <- c(mae_values, mae(test$SALE_PRC, svr_poly_prediction))
+models <- c(models, "SVM Polynomial")
+
+# Decision Tree
+dt_model <- rpart(SALE_PRC ~ ., data = train)
+dt_prediction <- predict(dt_model, newdata = test)
+mae_values <- c(mae_values, mae(test$SALE_PRC, dt_prediction))
+models <- c(models, "Decision Tree")
+
+# Random Forest with 100 trees
+rf_model_100 <- randomForest(SALE_PRC ~ ., data = train, ntree = 100)
+rf_prediction_100 <- predict(rf_model_100, newdata = test)
+mae_values <- c(mae_values, mae(test$SALE_PRC, rf_prediction_100))
+models <- c(models, "RF (100)")
+
+# Random Forest with 200 trees
+rf_model_200 <- randomForest(SALE_PRC ~ ., data = train, ntree = 200)
+rf_prediction_200 <- predict(rf_model_200, newdata = test)
+mae_values <- c(mae_values, mae(test$SALE_PRC, rf_prediction_200))
+models <- c(models, "RF (200)")
+
+# Random Forest with 500 trees
+rf_model_500 <- randomForest(SALE_PRC ~ ., data = train, ntree = 500)
+rf_prediction_500 <- predict(rf_model_500, newdata = test)
+mae_values <- c(mae_values, mae(test$SALE_PRC, rf_prediction_500))
+models <- c(models, "RF (500)")
+```
+
+## Model Comparison and Plotting
+```{r model-performance}
+models <- c('Linear Model', 'SVM Linear', 'SVM Radial', 'SVM Polynomial', 'Decision Tree', 'RF (100)', 'RF (200)', 'RF (500)')
+
+performance_data <- data.frame(models, mae_values)
+barplot(performance_data$mae_values, names.arg = performance_data$models, col = 'salmon',
+        main = 'MAE for Different Models', ylab = 'MAE', las = 2)
+
+# Best model
+best_model <- models[[which.min(mae_values)]]
+cat("Best Model based on MAE:", best_model, "\n")
+```
+
+## SVM Radial Tuning
+```{r svm-tune}
+tune_svm <- tune(
+  svm,
+  SALE_PRC ~ .,
+  data = train,
+  kernel = "radial",
+  ranges = list(cost = c(0.1, 1, 10, 100), gamma = c(0.01, 0.1, 1, 10))
+)
+
+print(tune_svm)
+
+best_svm <- tune_svm$best.model
+
+test <- test %>%
+  select(-SALE_PRC, SALE_PRC)
+
+svm_prediction_tuned <- predict(best_svm, newdata = test)
+cat("Tuned SVM MAE:", mae(test$SALE_PRC, svm_prediction_tuned), "\n")
+# Add predicted prices as a new column in the test dataset
+test1 <- test %>%
+  mutate(PREDICTED_SALE_PRC = svm_prediction_tuned)
+
+head(test1)
+
+# Scatter Plot: Actual vs Predicted Values
+plot(test1$SALE_PRC, svm_prediction_tuned,
+     main = "Actual vs Predicted Sale Prices",
+     xlab = "Actual Sale Price",
+     ylab = "Predicted Sale Price",
+     pch = 19, col = "dodgerblue")
+abline(a = 0, b = 1, col = "red", lwd = 2) 
+```
+
+## Save and Load Best SVM Model
+```{r save-load-model}
+saveRDS(best_svm, file = "best_svm_model.rds")
+best_svm_loaded <- readRDS("best_svm_model.rds")
+```
+
+## Predict New Sale Price
+```{r predict-new}
+new_input <- data.frame(
+  PARCELNO = 728980145245,
+  LND_SQFOOT = 11247,
+  TOT_LVG_AREA = 4552,
+  SPEC_FEAT_VAL = 2105,
+  RAIL_DIST = 4871.9,
+  OCEAN_DIST = 18507.2,
+  WATER_DIST = 375.8,
+  CNTR_DIST = 43897.9,
+  SUBCNTR_DI = 40115.7,
+  HWY_DIST = 41917.1,
+  age = 42,
+  avno60plus = 0,
+  structure_quality = 5,
+  month_sold = 8
+)
+
+predicted_price <- predict(best_svm_loaded, newdata = new_input)
+cat("Predicted Sale Price:", predicted_price, "\n")
+new_input$Predicted_SALE_PRC <- predicted_price
+
+print(new_input)
+```
